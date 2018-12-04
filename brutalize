@@ -75,7 +75,6 @@ def crack(password):
                
 #attempt connection to server
 def connect(ip, user, password):
-
     try:
         ftp = ftplib.FTP(ip)
         ftp.login(user, password)
@@ -83,8 +82,10 @@ def connect(ip, user, password):
     
     except ftplib.all_errors as e:
         if str(e).split(None, 1)[0] == "[Errno":
+            #this error happens if the server is down
             m_vars.last_error_response = str(e).split(None, 4)[1].split("]", 1)[0]
         else:
+            #these errors are server responses
             m_vars.last_error_response = str(e).split(None, 1)[0]
         return False
 
